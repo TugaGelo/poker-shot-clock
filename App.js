@@ -63,7 +63,7 @@ export default function App() {
       if (!foldedIndices.includes(next)) return next;
       next = (next + 1) % players.length;
     }
-    return currentIdx;
+    return currentIdx; 
   };
 
   const handleFold = () => {
@@ -73,27 +73,23 @@ export default function App() {
     const newFolds = [...foldedIndices, activeIdx];
     setFoldedIndices(newFolds);
 
-    const remainingCount = players.length - newFolds.length;
-    if (remainingCount <= 1 || playerTurnCount >= players.length) {
-       goToNextPhase();
+    const activePlayersLeft = players.length - newFolds.length;
+    if (activePlayersLeft === 1) {
+        setStreetIdx(4);
+        setIsPaused(true);
+        setPlayerTurnCount(0);
+        return;
+    }
+
+    const activePlayersInRotation = players.length - foldedIndices.length;
+    if (playerTurnCount >= activePlayersInRotation - 1) {
+       setStreetIdx(streetIdx + 1);
+       setIsPaused(true);
+       setPlayerTurnCount(0);
     } else {
        setActiveIdx(getNextActivePlayer(activeIdx));
-       setPlayerTurnCount(prev => prev + 1);
        setTimeLeft(isNoLimit ? 0 : parseInt(customTime));
     }
-  };
-
-  const goToNextPhase = () => {
-    if (streetIdx === STREETS.length - 1) {
-      const nextStart = (handStarterIdx + 1) % players.length;
-      setHandStarterIdx(nextStart);
-      setFoldedIndices([]);
-      setStreetIdx(-1);
-    } else {
-      setStreetIdx(streetIdx + 1);
-    }
-    setIsPaused(true);
-    setPlayerTurnCount(0);
   };
 
   const handleMainTap = () => {
@@ -101,36 +97,50 @@ export default function App() {
 
     if (isPaused) {
       if (STREETS[streetIdx] === 'SHOWDOWN') {
-        goToNextPhase();
+        const nextStart = (handStarterIdx + 1) % players.length;
+        setHandStarterIdx(nextStart);
+        setFoldedIndices([]);
+        setStreetIdx(-1);
+        setIsPaused(true);
         return;
       }
-      if (streetIdx === -1) setStreetIdx(0);
+
+      if (streetIdx === -1) {
+        setStreetIdx(0);
+      }
       
-      setActiveIdx(foldedIndices.includes(handStarterIdx) ? getNextActivePlayer(handStarterIdx) : handStarterIdx);
+      const startNode = foldedIndices.includes(handStarterIdx) ? getNextActivePlayer(handStarterIdx) : handStarterIdx;
+      
+      setActiveIdx(startNode);
       setPlayerTurnCount(1);
       setIsPaused(false);
       setTimeLeft(isNoLimit ? 0 : parseInt(customTime));
       return;
     }
 
-    if (playerTurnCount < (players.length - foldedIndices.length)) {
+    const totalActive = players.length - foldedIndices.length;
+
+    if (playerTurnCount < totalActive) {
       setActiveIdx(getNextActivePlayer(activeIdx));
-      setPlayerTurnCount(prev => prev + 1);
+      setPlayerTurnCount(playerTurnCount + 1);
       setTimeLeft(isNoLimit ? 0 : parseInt(customTime));
-    } else {
-      goToNextPhase();
+    } 
+    else {
+      setStreetIdx(streetIdx + 1);
+      setIsPaused(true);
+      setPlayerTurnCount(0);
     }
   };
 
   if (gameStarted) {
-    const currentPhase = streetIdx === -1 ? "DEAL" : STREETS[streetIdx];
+    const currentPhase = streetIdx === -1 ? "PRE-FLOP" : STREETS[streetIdx];
 
     return (
       <TouchableOpacity 
         style={[styles.gameContainer, (timeLeft <= 5 && !isNoLimit && !isPaused) && styles.dangerBg]} 
         onPress={handleMainTap} 
         onLongPress={handleFold}
-        delayLongPress={800}
+        delayLongPress={600}
         activeOpacity={1}
       >
         <StatusBar style="light" />
