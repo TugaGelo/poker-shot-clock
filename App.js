@@ -10,12 +10,13 @@ const STREETS = ['PRE-FLOP', 'FLOP', 'TURN', 'RIVER', 'SHOWDOWN'];
 export default function App() {
   const [playerName, setPlayerName] = useState('');
   const [players, setPlayers] = useState([]);
+  const [foldedIndices, setFoldedIndices] = useState([]);
   const [customTime, setCustomTime] = useState('30');
   const [gameStarted, setGameStarted] = useState(false);
 
-  const [handStarterIdx, setHandStarterIdx] = useState(0);
+  const [handStarterIdx, setHandStarterIdx] = useState(0); 
   const [activeIdx, setActiveIdx] = useState(0);
-  const [streetIdx, setStreetIdx] = useState(-1);
+  const [streetIdx, setStreetIdx] = useState(-1); 
   const [playerTurnCount, setPlayerTurnCount] = useState(0);
   const [timeLeft, setTimeLeft] = useState(30);
   const [isPaused, setIsPaused] = useState(true);
@@ -50,9 +51,49 @@ export default function App() {
 
   const handleStart = () => {
     setHandStarterIdx(0);
+    setFoldedIndices([]);
     setStreetIdx(-1);
     setIsPaused(true);
     setGameStarted(true);
+  };
+
+  const getNextActivePlayer = (currentIdx) => {
+    let next = (currentIdx + 1) % players.length;
+    for (let i = 0; i < players.length; i++) {
+      if (!foldedIndices.includes(next)) return next;
+      next = (next + 1) % players.length;
+    }
+    return currentIdx;
+  };
+
+  const handleFold = () => {
+    if (isPaused) return;
+    
+    Vibration.vibrate([100, 50, 100]);
+    const newFolds = [...foldedIndices, activeIdx];
+    setFoldedIndices(newFolds);
+
+    const remainingCount = players.length - newFolds.length;
+    if (remainingCount <= 1 || playerTurnCount >= players.length) {
+       goToNextPhase();
+    } else {
+       setActiveIdx(getNextActivePlayer(activeIdx));
+       setPlayerTurnCount(prev => prev + 1);
+       setTimeLeft(isNoLimit ? 0 : parseInt(customTime));
+    }
+  };
+
+  const goToNextPhase = () => {
+    if (streetIdx === STREETS.length - 1) {
+      const nextStart = (handStarterIdx + 1) % players.length;
+      setHandStarterIdx(nextStart);
+      setFoldedIndices([]);
+      setStreetIdx(-1);
+    } else {
+      setStreetIdx(streetIdx + 1);
+    }
+    setIsPaused(true);
+    setPlayerTurnCount(0);
   };
 
   const handleMainTap = () => {
@@ -60,33 +101,24 @@ export default function App() {
 
     if (isPaused) {
       if (STREETS[streetIdx] === 'SHOWDOWN') {
-        const nextStart = (handStarterIdx + 1) % players.length;
-        setHandStarterIdx(nextStart);
-        setStreetIdx(-1);
-        setIsPaused(true);
+        goToNextPhase();
         return;
       }
-
-      if (streetIdx === -1) {
-        setStreetIdx(0);
-      }
+      if (streetIdx === -1) setStreetIdx(0);
       
-      setActiveIdx(handStarterIdx);
+      setActiveIdx(foldedIndices.includes(handStarterIdx) ? getNextActivePlayer(handStarterIdx) : handStarterIdx);
       setPlayerTurnCount(1);
       setIsPaused(false);
       setTimeLeft(isNoLimit ? 0 : parseInt(customTime));
       return;
     }
 
-    if (playerTurnCount < players.length) {
-      setActiveIdx((activeIdx + 1) % players.length);
-      setPlayerTurnCount(playerTurnCount + 1);
+    if (playerTurnCount < (players.length - foldedIndices.length)) {
+      setActiveIdx(getNextActivePlayer(activeIdx));
+      setPlayerTurnCount(prev => prev + 1);
       setTimeLeft(isNoLimit ? 0 : parseInt(customTime));
-    } 
-    else {
-      setStreetIdx(streetIdx + 1);
-      setIsPaused(true);
-      setPlayerTurnCount(0);
+    } else {
+      goToNextPhase();
     }
   };
 
@@ -97,6 +129,8 @@ export default function App() {
       <TouchableOpacity 
         style={[styles.gameContainer, (timeLeft <= 5 && !isNoLimit && !isPaused) && styles.dangerBg]} 
         onPress={handleMainTap} 
+        onLongPress={handleFold}
+        delayLongPress={800}
         activeOpacity={1}
       >
         <StatusBar style="light" />
@@ -115,7 +149,7 @@ export default function App() {
             {isPaused ? currentPhase : (isNoLimit ? '∞' : timeLeft)}
           </Text>
           <Text style={styles.secondsLabel}>
-            {isPaused ? 'READY TO START' : (isNoLimit ? 'NO LIMIT' : 'SECONDS')}
+            {isPaused ? 'READY TO START' : (isNoLimit ? 'NO LIMIT' : 'HOLD TO FOLD')}
           </Text>
         </View>
 
@@ -198,7 +232,7 @@ const styles = StyleSheet.create({
   upsideDown: { transform: [{ rotate: '180deg' }] },
   dangerBg: { backgroundColor: '#1a0005' },
   gameHeader: { alignItems: 'center', width: '100%' },
-  gameTitle: { color: '#39FF14', letterSpacing: 3, fontSize: 14, fontWeight: '900', opacity: 1 },
+  gameTitle: { color: '#39FF14', letterSpacing: 3, fontSize: 14, fontWeight: '900' },
   activePlayerName: { color: '#fff', fontSize: 64, fontWeight: '900', textAlign: 'center', width: '90%', marginTop: 5 },
   timerBox: { alignItems: 'center', justifyContent: 'center', width: '100%' },
   timerText: { color: '#39FF14', fontSize: 100, fontWeight: '900', textAlign: 'center' },
