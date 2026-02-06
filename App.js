@@ -1,17 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  TextInput, 
-  TouchableOpacity, 
-  FlatList, 
-  KeyboardAvoidingView, 
-  Platform,
-  SafeAreaView,
-  Vibration 
+  StyleSheet, Text, View, TextInput, TouchableOpacity, 
+  FlatList, KeyboardAvoidingView, Platform, SafeAreaView, Vibration 
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+
+const STREETS = ['PRE-FLOP', 'FLOP', 'TURN', 'RIVER', 'SHOWDOWN'];
 
 export default function App() {
   const [playerName, setPlayerName] = useState('');
@@ -19,14 +13,18 @@ export default function App() {
   const [customTime, setCustomTime] = useState('30');
   const [gameStarted, setGameStarted] = useState(false);
 
+  const [handStarterIdx, setHandStarterIdx] = useState(0);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [streetIdx, setStreetIdx] = useState(-1);
+  const [playerTurnCount, setPlayerTurnCount] = useState(0);
   const [timeLeft, setTimeLeft] = useState(30);
+  const [isPaused, setIsPaused] = useState(true);
 
   const isNoLimit = !customTime || parseInt(customTime) === 0;
 
   useEffect(() => {
     let interval = null;
-    if (gameStarted && !isNoLimit && timeLeft > 0) {
+    if (gameStarted && !isNoLimit && timeLeft > 0 && !isPaused) {
       interval = setInterval(() => {
         setTimeLeft((prev) => prev - 1);
       }, 1000);
@@ -35,7 +33,7 @@ export default function App() {
       clearInterval(interval);
     }
     return () => clearInterval(interval);
-  }, [gameStarted, timeLeft, isNoLimit]);
+  }, [gameStarted, timeLeft, isNoLimit, isPaused]);
 
   const addPlayer = () => {
     if (playerName.trim().length > 0) {
@@ -51,41 +49,79 @@ export default function App() {
   };
 
   const handleStart = () => {
-    setTimeLeft(isNoLimit ? 0 : parseInt(customTime));
+    setHandStarterIdx(0);
+    setStreetIdx(-1);
+    setIsPaused(true);
     setGameStarted(true);
   };
 
-  const nextTurn = () => {
-    Vibration.vibrate(50); 
-    setActiveIdx((prev) => (prev + 1) % players.length);
-    setTimeLeft(isNoLimit ? 0 : parseInt(customTime));
+  const handleMainTap = () => {
+    Vibration.vibrate(40);
+
+    if (isPaused) {
+      if (STREETS[streetIdx] === 'SHOWDOWN') {
+        const nextStart = (handStarterIdx + 1) % players.length;
+        setHandStarterIdx(nextStart);
+        setStreetIdx(-1);
+        setIsPaused(true);
+        return;
+      }
+
+      if (streetIdx === -1) {
+        setStreetIdx(0);
+      }
+      
+      setActiveIdx(handStarterIdx);
+      setPlayerTurnCount(1);
+      setIsPaused(false);
+      setTimeLeft(isNoLimit ? 0 : parseInt(customTime));
+      return;
+    }
+
+    if (playerTurnCount < players.length) {
+      setActiveIdx((activeIdx + 1) % players.length);
+      setPlayerTurnCount(playerTurnCount + 1);
+      setTimeLeft(isNoLimit ? 0 : parseInt(customTime));
+    } 
+    else {
+      setStreetIdx(streetIdx + 1);
+      setIsPaused(true);
+      setPlayerTurnCount(0);
+    }
   };
 
   if (gameStarted) {
+    const currentPhase = streetIdx === -1 ? "DEAL" : STREETS[streetIdx];
+
     return (
       <TouchableOpacity 
-        style={[styles.gameContainer, (timeLeft <= 5 && !isNoLimit) && styles.dangerBg]} 
-        onPress={nextTurn} 
+        style={[styles.gameContainer, (timeLeft <= 5 && !isNoLimit && !isPaused) && styles.dangerBg]} 
+        onPress={handleMainTap} 
         activeOpacity={1}
       >
         <StatusBar style="light" />
         
-        {/* TOP MIRROR (Upside Down) */}
         <View style={[styles.gameHeader, styles.upsideDown]}>
-          <Text style={styles.gameTitle}>CURRENT TURN</Text>
-          <Text style={styles.activePlayerName}>{players[activeIdx].toUpperCase()}</Text>
+          <Text style={styles.gameTitle}>{currentPhase}</Text>
+          {!isPaused && <Text style={styles.activePlayerName}>{players[activeIdx].toUpperCase()}</Text>}
         </View>
 
         <View style={styles.timerBox}>
-          <Text style={[styles.timerText, (timeLeft <= 5 && !isNoLimit) && styles.timerDanger]}>
-            {isNoLimit ? '∞' : timeLeft}
+          <Text style={[
+            styles.timerText, 
+            (timeLeft <= 5 && !isNoLimit && !isPaused) && styles.timerDanger,
+            isPaused && styles.phaseDisplayText
+          ]}>
+            {isPaused ? currentPhase : (isNoLimit ? '∞' : timeLeft)}
           </Text>
-          <Text style={styles.secondsLabel}>{isNoLimit ? 'NO LIMIT' : 'SECONDS'}</Text>
+          <Text style={styles.secondsLabel}>
+            {isPaused ? 'READY TO START' : (isNoLimit ? 'NO LIMIT' : 'SECONDS')}
+          </Text>
         </View>
 
         <View style={styles.gameHeader}>
-          <Text style={styles.gameTitle}>CURRENT TURN</Text>
-          <Text style={styles.activePlayerName}>{players[activeIdx].toUpperCase()}</Text>
+          <Text style={styles.gameTitle}>{currentPhase}</Text>
+          {!isPaused && <Text style={styles.activePlayerName}>{players[activeIdx].toUpperCase()}</Text>}
           
           <TouchableOpacity style={styles.exitButton} onPress={() => setGameStarted(false)}>
             <Text style={styles.exitButtonText}>END SESSION</Text>
@@ -105,51 +141,24 @@ export default function App() {
               <Text style={styles.titleText}>POKER SETUP</Text>
               <View style={styles.neonLine} />
             </View>
-
             <View style={styles.timeInputContainer}>
-              <Text style={styles.inputLabel}>TIMER (SECONDS - 0 FOR NO LIMIT)</Text>
-              <TextInput 
-                style={styles.timeInput}
-                value={customTime}
-                onChangeText={setCustomTime}
-                keyboardType="numeric"
-                placeholder="30"
-                placeholderTextColor="#39FF1444"
-                maxLength={3}
-              />
+              <Text style={styles.inputLabel}>TIMER (0 FOR NO LIMIT)</Text>
+              <TextInput style={styles.timeInput} value={customTime} onChangeText={setCustomTime} keyboardType="numeric" maxLength={3} />
             </View>
-
             <View style={styles.inputSection}>
-              <TextInput 
-                style={styles.input} 
-                placeholder="WHO'S IN?" 
-                placeholderTextColor="#39FF1466" 
-                value={playerName} 
-                onChangeText={setPlayerName} 
-                autoCapitalize="characters" 
-              />
-              <TouchableOpacity style={styles.addButton} onPress={addPlayer}>
-                <Text style={styles.addButtonText}>+</Text>
-              </TouchableOpacity>
+              <TextInput style={styles.input} placeholder="WHO'S IN?" placeholderTextColor="#39FF1466" value={playerName} onChangeText={setPlayerName} autoCapitalize="characters" />
+              <TouchableOpacity style={styles.addButton} onPress={addPlayer}><Text style={styles.addButtonText}>+</Text></TouchableOpacity>
             </View>
-
-            <FlatList 
-              data={players} 
-              keyExtractor={(item, index) => index.toString()} 
-              renderItem={({ item, index }) => (
-                <View style={styles.playerCard}>
-                  <View style={styles.playerInfo}>
-                    <Text style={styles.playerNumber}>#0{index + 1}</Text>
-                    <Text style={styles.playerItem}>{item.toUpperCase()}</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => removePlayer(index)} style={styles.minusButton}>
-                    <Text style={styles.minusButtonText}>-</Text>
-                  </TouchableOpacity>
+            <FlatList data={players} keyExtractor={(item, index) => index.toString()} renderItem={({ item, index }) => (
+              <View style={styles.playerCard}>
+                <View style={styles.playerInfo}>
+                  <Text style={styles.playerNumber}>#0{index + 1}</Text>
+                  <Text style={styles.playerItem}>{item.toUpperCase()}</Text>
                 </View>
-              )} 
-            />
+                <TouchableOpacity onPress={() => removePlayer(index)} style={styles.minusButton}><Text style={styles.minusButtonText}>-</Text></TouchableOpacity>
+              </View>
+            )} />
           </View>
-
           {players.length >= 2 && (
             <TouchableOpacity style={styles.startButton} onPress={handleStart}>
               <Text style={styles.startButtonText}>DROP THE HAMMER</Text>
@@ -169,47 +178,33 @@ const styles = StyleSheet.create({
   headerBox: { marginBottom: 20, alignItems: 'center' },
   titleText: { color: '#39FF14', fontSize: 32, fontWeight: '900', letterSpacing: 4, textAlign: 'center' },
   neonLine: { height: 2, width: 140, backgroundColor: '#39FF14', marginTop: 10 },
-  
   timeInputContainer: { marginBottom: 20 },
-  inputLabel: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', marginBottom: 8, letterSpacing: 1, opacity: 0.7 },
-  timeInput: { 
-    borderWidth: 2, 
-    borderColor: '#39FF14', 
-    color: '#39FF14', 
-    padding: 10, 
-    fontSize: 20, 
-    fontWeight: '900', 
-    textAlign: 'center',
-    backgroundColor: '#111'
-  },
-
+  inputLabel: { color: '#39FF14', fontSize: 10, fontWeight: 'bold', marginBottom: 8, opacity: 0.9 },
+  timeInput: { borderWidth: 2, borderColor: '#39FF14', color: '#39FF14', padding: 10, fontSize: 20, fontWeight: '900', textAlign: 'center', backgroundColor: '#111' },
   inputSection: { flexDirection: 'row', marginBottom: 20, borderWidth: 2, borderColor: '#39FF14' },
   input: { flex: 1, color: '#39FF14', padding: 15, fontSize: 18, fontWeight: 'bold' },
   addButton: { backgroundColor: '#39FF14', width: 60, justifyContent: 'center', alignItems: 'center' },
   addButtonText: { color: '#000', fontSize: 30, fontWeight: 'bold' },
-  
   playerCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', padding: 15, marginBottom: 10, borderLeftWidth: 5, borderLeftColor: '#39FF14', justifyContent: 'space-between' },
   playerInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   playerNumber: { color: '#39FF14', fontWeight: 'bold', marginRight: 15, fontSize: 12, opacity: 0.5 },
   playerItem: { color: '#fff', fontSize: 18, fontWeight: '800' },
   minusButton: { width: 40, height: 40, borderWidth: 2, borderColor: '#FF0055', justifyContent: 'center', alignItems: 'center' },
-  minusButtonText: { color: '#FF0055', fontSize: 30, fontWeight: 'bold', lineHeight: 32 },
-  
+  minusButtonText: { color: '#FF0055', fontSize: 30, fontWeight: 'bold' },
   startButton: { backgroundColor: '#39FF14', margin: 25, padding: 22, alignItems: 'center' },
-  startButtonText: { color: '#000', fontSize: 20, fontWeight: '900', letterSpacing: 2 },
+  startButtonText: { color: '#000', fontSize: 20, fontWeight: '900' },
 
   gameContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 50 },
   upsideDown: { transform: [{ rotate: '180deg' }] },
   dangerBg: { backgroundColor: '#1a0005' },
   gameHeader: { alignItems: 'center', width: '100%' },
-  gameTitle: { color: '#39FF14', letterSpacing: 3, fontSize: 14, fontWeight: '900', opacity: 0.8 },
-  activePlayerName: { color: '#fff', fontSize: 64, fontWeight: '900', textAlign: 'center', width: '90%' },
-  
-  timerBox: { alignItems: 'center', justifyContent: 'center' },
-  timerText: { color: '#39FF14', fontSize: 140, fontWeight: '900', textAlign: 'center', lineHeight: 150 },
-  timerDanger: { color: '#FF0055', textShadowColor: '#FF0055CC', textShadowRadius: 15 },
-  secondsLabel: { color: '#39FF14', fontSize: 14, letterSpacing: 6, opacity: 0.5, marginTop: -10 },
-  
-  exitButton: { marginTop: 25, paddingBottom: 5, borderBottomWidth: 1, borderColor: '#222' },
-  exitButtonText: { color: '#444', fontSize: 10, fontWeight: 'bold' },
+  gameTitle: { color: '#39FF14', letterSpacing: 3, fontSize: 14, fontWeight: '900', opacity: 1 },
+  activePlayerName: { color: '#fff', fontSize: 64, fontWeight: '900', textAlign: 'center', width: '90%', marginTop: 5 },
+  timerBox: { alignItems: 'center', justifyContent: 'center', width: '100%' },
+  timerText: { color: '#39FF14', fontSize: 100, fontWeight: '900', textAlign: 'center' },
+  phaseDisplayText: { fontSize: 60, letterSpacing: 2 }, 
+  timerDanger: { color: '#FF0055' },
+  secondsLabel: { color: '#39FF14', fontSize: 14, letterSpacing: 2, fontWeight: 'bold', marginTop: 10 },
+  exitButton: { marginTop: 25 },
+  exitButtonText: { color: '#333', fontSize: 10, fontWeight: 'bold' },
 });
