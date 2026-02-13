@@ -1,3 +1,10 @@
+import 'react-native-get-random-values';
+import 'react-native-url-polyfill/auto';
+import { Amplify } from 'aws-amplify';
+import outputs from './amplify_outputs.json';
+
+Amplify.configure(outputs);
+
 import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, Text, View, TextInput, TouchableOpacity, 
