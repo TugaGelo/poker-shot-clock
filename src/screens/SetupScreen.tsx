@@ -21,18 +21,18 @@ export default function SetupScreen({
 }: SetupScreenProps) {
   
   const client = generateClient<Schema>();
-  
   const [playerName, setPlayerName] = useState('');
   
   const [dbPlayers, setDbPlayers] = useState<Array<Schema["Player"]["type"]>>([]);
 
   useEffect(() => {
-    console.log("Available AWS Models:", Object.keys(client.models));
-
     const sub = client.models.Player?.observeQuery().subscribe({
       next: ({ items }) => {
         setDbPlayers(items);
-        setPlayers(items.map(p => p.name));
+        
+        const activePlayers = items.filter(p => p.status === 'ACTIVE');
+        
+        setPlayers(activePlayers.map(p => p.name));
       },
       error: (err) => console.error("Sync error:", err)
     });
@@ -41,28 +41,44 @@ export default function SetupScreen({
   }, []);
 
   const addPlayer = async () => {
-    if (playerName.trim().length > 0) {
+    const formattedName = playerName.trim().toUpperCase();
+    
+    if (formattedName.length > 0) {
       try {
-        await client.models.Player.create({
-          name: playerName.toUpperCase(),
-          totalProfit: 0,
-          status: 'ACTIVE',
-        });
+        const existingPlayer = dbPlayers.find(p => p.name === formattedName);
+
+        if (existingPlayer) {
+          await client.models.Player.update({
+            id: existingPlayer.id,
+            status: 'ACTIVE'
+          });
+        } else {
+          await client.models.Player.create({
+            name: formattedName,
+            totalProfit: 0,
+            gamesPlayed: 0,
+            status: 'ACTIVE',
+          });
+        }
         setPlayerName('');
       } catch (error) {
-        console.error("Error saving player to AWS:", error);
+        console.error("Error adding player:", error);
       }
     }
   };
 
-  const removePlayer = async (index: number) => {
+  const removePlayer = async (nameToRemove: string) => {
     try {
-      const playerToDelete = dbPlayers[index];
-      if (playerToDelete) {
-        await client.models.Player.delete({ id: playerToDelete.id });
+      const playerToHide = dbPlayers.find(p => p.name === nameToRemove);
+      
+      if (playerToHide) {
+        await client.models.Player.update({ 
+          id: playerToHide.id,
+          status: 'SITTING_OUT' 
+        });
       }
     } catch (error) {
-      console.error("Error deleting player:", error);
+      console.error("Error hiding player:", error);
     }
   };
 
@@ -110,7 +126,7 @@ export default function SetupScreen({
                   <Text style={styles.playerNumber}>#0{index + 1}</Text>
                   <Text style={styles.playerItem}>{item}</Text>
                 </View>
-                <TouchableOpacity onPress={() => removePlayer(index)} style={styles.minusButton}>
+                <TouchableOpacity onPress={() => removePlayer(item)} style={styles.minusButton}>
                   <Text style={styles.minusButtonText}>-</Text>
                 </TouchableOpacity>
               </View>
