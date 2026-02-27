@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, Text, View, TextInput, TouchableOpacity, 
   FlatList, KeyboardAvoidingView, Platform, SafeAreaView 
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../amplify/data/resource';
 
 interface SetupScreenProps {
   players: string[];
@@ -17,19 +20,50 @@ export default function SetupScreen({
   players, setPlayers, customTime, setCustomTime, setGameStarted 
 }: SetupScreenProps) {
   
+  const client = generateClient<Schema>();
+  
   const [playerName, setPlayerName] = useState('');
+  
+  const [dbPlayers, setDbPlayers] = useState<Array<Schema["Player"]["type"]>>([]);
 
-  const addPlayer = () => {
+  useEffect(() => {
+    console.log("Available AWS Models:", Object.keys(client.models));
+
+    const sub = client.models.Player?.observeQuery().subscribe({
+      next: ({ items }) => {
+        setDbPlayers(items);
+        setPlayers(items.map(p => p.name));
+      },
+      error: (err) => console.error("Sync error:", err)
+    });
+    
+    return () => sub?.unsubscribe(); 
+  }, []);
+
+  const addPlayer = async () => {
     if (playerName.trim().length > 0) {
-      setPlayers([...players, playerName]); 
-      setPlayerName('');
+      try {
+        await client.models.Player.create({
+          name: playerName.toUpperCase(),
+          totalProfit: 0,
+          status: 'ACTIVE',
+        });
+        setPlayerName('');
+      } catch (error) {
+        console.error("Error saving player to AWS:", error);
+      }
     }
   };
 
-  const removePlayer = (index: number) => {
-    const newPlayers = [...players];
-    newPlayers.splice(index, 1);
-    setPlayers(newPlayers);
+  const removePlayer = async (index: number) => {
+    try {
+      const playerToDelete = dbPlayers[index];
+      if (playerToDelete) {
+        await client.models.Player.delete({ id: playerToDelete.id });
+      }
+    } catch (error) {
+      console.error("Error deleting player:", error);
+    }
   };
 
   const handleStart = () => {
@@ -42,25 +76,39 @@ export default function SetupScreen({
       <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flexOne}>
           <View style={styles.content}>
+            
             <View style={styles.headerBox}>
               <Text style={styles.titleText}>POKER SETUP</Text>
               <View style={styles.neonLine} />
             </View>
+            
             <View style={styles.timeInputContainer}>
               <Text style={styles.inputLabel}>TIMER (0 FOR NO LIMIT)</Text>
               <TextInput style={styles.timeInput} value={customTime} onChangeText={setCustomTime} keyboardType="numeric" maxLength={3} />
             </View>
+            
             <View style={styles.inputSection}>
-              <TextInput style={styles.input} placeholder="WHO'S IN?" placeholderTextColor="#39FF1466" value={playerName} onChangeText={setPlayerName} autoCapitalize="characters" />
+              <TextInput 
+                style={styles.input} 
+                placeholder="WHO'S IN?" 
+                placeholderTextColor="#39FF1466" 
+                value={playerName} 
+                onChangeText={setPlayerName} 
+                autoCapitalize="characters" 
+              />
               <TouchableOpacity style={styles.addButton} onPress={addPlayer}>
                 <Text style={styles.addButtonText}>+</Text>
               </TouchableOpacity>
             </View>
-            <FlatList data={players} keyExtractor={(item, index) => index.toString()} renderItem={({ item, index }) => (
+            
+            <FlatList 
+              data={players} 
+              keyExtractor={(item, index) => index.toString()} 
+              renderItem={({ item, index }) => (
               <View style={styles.playerCard}>
                 <View style={styles.playerInfo}>
                   <Text style={styles.playerNumber}>#0{index + 1}</Text>
-                  <Text style={styles.playerItem}>{item.toUpperCase()}</Text>
+                  <Text style={styles.playerItem}>{item}</Text>
                 </View>
                 <TouchableOpacity onPress={() => removePlayer(index)} style={styles.minusButton}>
                   <Text style={styles.minusButtonText}>-</Text>
@@ -68,6 +116,7 @@ export default function SetupScreen({
               </View>
             )} />
           </View>
+          
           {players.length >= 2 && (
             <TouchableOpacity style={styles.startButton} onPress={handleStart}>
               <Text style={styles.startButtonText}>DROP THE HAMMER</Text>
